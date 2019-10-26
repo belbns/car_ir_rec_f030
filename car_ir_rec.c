@@ -488,6 +488,7 @@ static void tim1_setup(void) {
     rcc_periph_reset_pulse(RST_TIM1);
     timer_set_mode(TIM1, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM1, 48 - 1);
+    timer_one_shot_mode(TIM1);
     timer_disable_preload(TIM1);
     timer_set_period(TIM1, 7);  // ARR
     timer_set_repetition_counter(TIM1, 0);
