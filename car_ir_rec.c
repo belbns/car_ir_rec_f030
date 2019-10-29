@@ -34,12 +34,13 @@ uint8_t get_pulses(ir_codes adcom);
 ir_codes decode_package(void);
 char * itoa(int val, int base);
 void dbg_print(char * st);
+void gen_pulses(uint16_t number);
 
 uint64_t millis(void);
 void delay(uint64_t duration);
 
 #define PAGE_15_ADDR            0x08003C00
-#define CODES_SIGNATURE         0x66AA
+#define CODES_SIGNATURE         0x55AA
 #define CODES_MAX               25
 #define PULSES_MAX              99
 // duration connected state of Potentiometer, mS
@@ -94,6 +95,15 @@ void dbg_print(char * st)
     dma_write();    
 }
 
+void gen_pulses(uint16_t number)
+{
+    timer_set_period(TIM1, 7);  // ARR         - Period
+    timer_set_oc_value(TIM1, TIM_OC1, 4);   // - Pulse
+    timer_set_repetition_counter(TIM1, number - 1);
+    timer_generate_event(TIM1, TIM_EGR_UG);
+    flag_pulse = 1;
+    timer_enable_counter(TIM1);
+}
 
 int main(void)
 {
@@ -131,20 +141,11 @@ int main(void)
         led_blink(6);
     }
 
-    // Start pulse generation
-    timer_enable_break_main_output(TIM1);
-    /* Enable auto-reload register preload */
-    timer_enable_preload(TIM1);
-    //Enable irq
     timer_enable_irq(TIM1, TIM_DIER_UIE);
-
     // Set Potentiometer to 0 - count down 99 steps
     timer_disable_counter(TIM1);
     gpio_clear(GPIOA, GPIO6);
-    timer_set_repetition_counter(TIM1, 99);
-    timer_generate_event(TIM1, TIM_EGR_UG);
-    flag_pulse = 1;
-    timer_enable_counter(TIM1);
+    gen_pulses(99);
 
     while (1)
     {
@@ -213,14 +214,9 @@ int main(void)
                                 curr_count += pulses;
                             }
                         }
-                        timer_set_repetition_counter(TIM1, pulses - 1);
-                        timer_generate_event(TIM1, TIM_EGR_UG);
-                        flag_pulse = 1;
-                        timer_enable_counter(TIM1);
-
+                        gen_pulses(pulses - 1);
                         receiveComplete = 0;
                         startflag = 0;
-
                         while (flag_pulse)
                         {
                             delay(4);
@@ -483,24 +479,30 @@ static void tim1_setup(void) {
     nvic_set_priority(NVIC_TIM1_BRK_UP_TRG_COM_IRQ, 1);
 
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO7);
-    gpio_set_af(GPIOA, GPIO_AF1, GPIO7);
+    gpio_set_af(GPIOA, GPIO_AF2, GPIO7);
 
     rcc_periph_reset_pulse(RST_TIM1);
     timer_set_mode(TIM1, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM1, 48 - 1);
-    timer_one_shot_mode(TIM1);
-    timer_disable_preload(TIM1);
-    timer_set_period(TIM1, 7);  // ARR
+    timer_set_period(TIM1, 7);  // ARR         - Period
+    timer_set_oc_value(TIM1, TIM_OC1, 4);   // - Pulse
     timer_set_repetition_counter(TIM1, 0);
+    timer_generate_event(TIM1, TIM_EGR_UG);
+    timer_one_shot_mode(TIM1);
 
-    timer_enable_oc_preload(TIM1, TIM_OC1);
     timer_set_oc_mode(TIM1, TIM_OC1, TIM_OCM_PWM2);
-    timer_enable_oc_output(TIM1, TIM_OC1N);
-    timer_set_oc_polarity_high(TIM1, TIM_OC1N);
+
+    timer_disable_preload(TIM1);
+    
+
+//    timer_enable_oc_preload(TIM1, TIM_OC1);
+    timer_set_oc_polarity_low(TIM1, TIM_OC1N);
     timer_set_oc_idle_state_set(TIM1, TIM_OC1N);
 
+    timer_enable_oc_output(TIM1, TIM_OC1N);
+    timer_enable_break_main_output(TIM1);
+
     //timer_enable_break_main_output(TIM1);
-    timer_set_oc_value(TIM1, TIM_OC1, 4);
 
     //timer_enable_irq(TIM1, TIM_DIER_UIE);
     //timer_enable_counter(TIM1);
@@ -541,7 +543,7 @@ void tim1_brk_up_trg_com_isr(void)
     {
         timer_clear_flag(TIM1, TIM_SR_UIF);
         flag_pulse = 0;
-        timer_disable_counter(TIM1);
+        //timer_disable_counter(TIM1);
     }
 }
 
