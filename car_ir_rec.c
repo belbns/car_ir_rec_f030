@@ -1,3 +1,24 @@
+/*
+* Autor: Nikolay Belov
+*
+* The steering wheel buttons imitator based on STM32F030F4P6 with using
+* Digitally-Controlled Potentiometer X9103P as a resistive matrix
+* for imitating real steering wheel buttons.
+* The Device must be connected to KEY1 or KEY2 input of car multimedia device
+* (Android based device in my case).
+* The device allow imitate up to 24 buttons with 400 Ohm steps.
+* Any IR remote control with NEC protocol can be used as a steering wheel buttons,
+* I use cheep "Steering Wheel Remote Control For Car multimedia Player" from Aiexpress.
+* The Lerning mode (the Learn button) allow to detect and to remember remote codes 
+* and to save them to the internal flash memory.
+* The Test button is using to manual connect the potentiometer to multimedia device
+* during setting buttons procedure.
+*
+* Thanks for NEC IR protocol detecting idea:
+* https://blog.csdn.net/u011303443/article/details/76945003
+* https://programmer.help/blogs/stm32-timer-for-infrared-remote-control-data-reception.html
+*/
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -39,14 +60,16 @@ void gen_pulses(uint16_t number);
 uint64_t millis(void);
 void delay(uint64_t duration);
 
-#define PAGE_15_ADDR            0x08003C00
+#define PAGE_15_ADDR            0x08003C00  // upper page of the flash memory
 #define CODES_SIGNATURE         0x55AA
 #define CODES_MAX               25
 #define PULSES_MAX              99
-// duration connected state of Potentiometer, mS
-#define KEY_PULSE               150
+
+#define KEY_PULSE               150 // duration of the connected state of Potentiometer, mS
 
 #define SNDBUF_SZ               64
+
+#define DEBUG_PRINT
 
 uint8_t flag_pulse = 0;
 uint8_t flagCounting = 0;
@@ -56,45 +79,48 @@ uint8_t irdata[33];             //Used to record the time between two falling ed
 uint8_t receiveComplete;        //Receive Complete Flag Bits
 uint8_t idx;                    //Number received for indexing
 uint8_t startflag;              //Indicates start of reception
+
 char sndbuf[SNDBUF_SZ];
 char tbuff[SNDBUF_SZ];
+
 ir_codes butt_codes[CODES_MAX]; // signature + IR codes array
 
-uint8_t teachingFlag = 0;               //
-uint8_t teach_counter = 0;
+uint8_t learningFlag = 0;       // 1 - the learning mode
+uint8_t learn_counter = 0;
 
+uint8_t transmit = 0;
 
-// Storage for our monotonic system clock.
-// Note that it needs to be volatile since we're modifying it from an interrupt.
 static volatile uint64_t _millis = 0;
 
 uint64_t millis(void) {
     return _millis;
 }
 
-// This is our interrupt handler for the systick reload interrupt.
-// The full list of interrupt services routines that can be implemented is
-// listed in libopencm3/include/libopencm3/stm32/f0/nvic.h
 void sys_tick_handler(void) {
     // Increment our monotonic clock
     _millis++;
 }
 
-/**
- * Delay for a real number of milliseconds
- */
 void delay(uint64_t duration) {
     const uint64_t until = millis() + duration;
     while (millis() < until) ;
 }
 
+// debug messages via USART
 void dbg_print(char * st)
 {
+    while (transmit != 0)
+    {
+        delay(4);
+    }
     strcpy(sndbuf, st);
     strcat(sndbuf, "\0");
+    transmit = 1;
     dma_write();    
 }
 
+/* N-pulse waveform generation for change 
+    the wiper position of the potentiometer. */
 void gen_pulses(uint16_t number)
 {
     timer_set_period(TIM1, 7);  // ARR         - Period
@@ -117,12 +143,13 @@ int main(void)
     ir_codes ircode;
     int8_t curr_count = 0;
 
+#ifdef DEBUG_PRINT
     dbg_print("***** Started! *****\n");
-    
+#endif    
     receiveComplete = 0;
     startflag = 0;
-    gpio_clear(GPIOB, GPIO1);     // break Resistor out
-    gpio_set(GPIOA, GPIO4);     // board LED
+    gpio_clear(GPIOB, GPIO1);   // break Resistor out - to Q1
+    gpio_set(GPIOA, GPIO4);     // board LED off
 
     // FLASH read
     uint32_t addr = PAGE_15_ADDR;
@@ -133,51 +160,56 @@ int main(void)
     }
 
     if (butt_codes[0].adrcode != CODES_SIGNATURE) {
-        // saved array not exists -> Set Teaching mode
+        // saved array not exists -> set learning mode
         delay(200);
+#ifdef DEBUG_PRINT
         dbg_print("\n** No saved codes - switch to learning! **\n");
-        teachingFlag = 1;
-        teach_counter = 1;
+#endif
+        learningFlag = 1;
+        learn_counter = 1;
         led_blink(6);
     }
 
     timer_enable_irq(TIM1, TIM_DIER_UIE);
-    // Set Potentiometer to 0 - count down 99 steps
+    // Set Potentiometer to 0 Ohm - count down 99 steps
     timer_disable_counter(TIM1);
     gpio_clear(GPIOA, GPIO6);
-    gen_pulses(99);
+    gen_pulses(100);
+    delay(100);
 
     while (1)
     {
-        if (receiveComplete)  // packet received
+        if (receiveComplete)  // if packet received?
         {
-            ircode = decode_package();    // 0xFF - broken IR package (code != ~code)
-            if (ircode.adcod[1] < 0xFF)
+            ircode = decode_package();
+            if (ircode.adcod[1] < 0xFF) // 0xFF - broken IR package (code != ~code)
             {
-                if (teachingFlag)
+                if (learningFlag)
                 {
-                    if (teach_counter < CODES_MAX)
+                    if (learn_counter < CODES_MAX)
                     {
-                        butt_codes[teach_counter].adrcode = ircode.adrcode;
-                        teach_counter++;
+                        butt_codes[learn_counter].adrcode = ircode.adrcode;
+                        learn_counter++;
                     }
-                    if (teach_counter == CODES_MAX)
+                    if (learn_counter == CODES_MAX)
                     {
                         delay(200);
-                        dbg_print("\n** End lerning - switch to work! **\n");
-                        led_blink(4); // 4 - save codes and switch to work mode
+#ifdef DEBUG_PRINT
+                        dbg_print("\n** End of lerning - switch to work! **\n");
+#endif
+                        led_blink(4); // 4 blinks - save codes and switch to work mode
                         save_codes_to_flash();
-                        teachingFlag = 0;
-                        teach_counter = 1;
+                        learningFlag = 0;
+                        learn_counter = 1;
                     }
                     else
                     {
-                        led_blink(2); // 2 - expect next code
+                        led_blink(2); // 2 blinks - expect next code
                     }
                 }
                 else  // work mode
                 {
-                    gpio_clear(GPIOA, GPIO4);
+                    gpio_clear(GPIOA, GPIO4);   // board LED ON
                           
                     int8_t npulses = get_pulses(ircode);
                     while (flag_pulse)
@@ -188,9 +220,9 @@ int main(void)
                     int8_t d = curr_count - npulses;
                     if ( d != 0)
                     {
-                        if (d > 0)    // count down
+                        if (d > 0)
                         {
-                            gpio_clear(GPIOA, GPIO6);
+                            gpio_clear(GPIOA, GPIO6);   // count down
                             pulses = d;
                             if (pulses > curr_count)
                             {
@@ -201,9 +233,9 @@ int main(void)
                                 curr_count -= pulses;
                             }
                         }
-                        else  // count up
+                        else
                         {
-                            gpio_set(GPIOA, GPIO6);
+                            gpio_set(GPIOA, GPIO6); // count up
                             pulses = -d;
                             if ((curr_count + pulses) > PULSES_MAX)
                             {
@@ -214,38 +246,37 @@ int main(void)
                                 curr_count += pulses;
                             }
                         }
-                        gen_pulses(pulses - 1);
+                        gen_pulses(pulses);
                         receiveComplete = 0;
                         startflag = 0;
                         while (flag_pulse)
                         {
                             delay(4);
                         }
-                        // connect Resistor out
-                        gpio_set(GPIOB, GPIO1);
+                        gpio_set(GPIOB, GPIO1);     // connect the Potentiometer
                         delay(KEY_PULSE);
-                        // break Resistor out
-                        gpio_clear(GPIOB, GPIO1);
+                        gpio_clear(GPIOB, GPIO1);   // disconnect the Potentiometer
                     }
-                    gpio_set(GPIOA, GPIO4);
+                    gpio_set(GPIOA, GPIO4); // board LED OFF
                 }
             }
             receiveComplete = 0;
             startflag = 0;
-            //dma_write(sndbuf, strlen(sndbuf));
         }     // if (receiveComplete)
         else
         {
             // Check if Learning mode button is pressed
             if (gpio_get(GPIOA, GPIO5) == 0)
             {
-                if (!teachingFlag)
+                if (!learningFlag)
                 {
                     // Set Learning mode - 6 blinks
                     delay(200);
+#ifdef DEBUG_PRINT
                     dbg_print("\n** Button pressed - switch to learning! **\n");
-                    teachingFlag = 1;
-                    teach_counter = 1;
+#endif
+                    learningFlag = 1;
+                    learn_counter = 1;
                     led_blink(6);
                 }
             }
@@ -255,17 +286,19 @@ int main(void)
     return 0;
 }
 
+// Board LED blink
 void led_blink(uint8_t cnt)
 {
-        for (uint8_t i = 0; i < cnt; i++)
-        {
-                gpio_clear(GPIOA, GPIO4);
-                delay(200);
-                gpio_set(GPIOA, GPIO4);
-                delay(200);
-        }                         
+    for (uint8_t i = 0; i < cnt; i++)
+    {
+        gpio_clear(GPIOA, GPIO4);
+        delay(200);
+        gpio_set(GPIOA, GPIO4);
+        delay(200);
+    }                         
 }
 
+// save codes to internal flash memory
 void save_codes_to_flash(void)
 {
     butt_codes[0].adrcode = CODES_SIGNATURE;
@@ -283,6 +316,8 @@ void save_codes_to_flash(void)
     flash_lock();
 }
 
+/* return the number of pulses for switching from 0 Ohm
+ to the destination resistanse with 400 OHm steps */
 uint8_t get_pulses(ir_codes adcom)
 {       
     uint8_t res = 0;
@@ -296,15 +331,20 @@ uint8_t get_pulses(ir_codes adcom)
             break;
         }
     }
+#ifdef DEBUG_PRINT
+    strcpy(tbuff, " => pulses: ");
+    strcat(tbuff, itoa(res, 10));
+    strcat(tbuff, "\n");
+    dbg_print(tbuff);
+#endif
     return res;
 }
 
+// decode the received IR package
 ir_codes decode_package(void)
 {
     uint8_t i, j;
-    // idx starts with 1 to indicate that
-    // the synchronization header time is not handled
-    uint8_t indx = 1;
+    uint8_t indx = 1;   // indx starts with 1 to exclude the synchronization header
     uint8_t temp = 0;
     uint8_t remote_code[4];
     ir_codes res;
@@ -321,13 +361,14 @@ ir_codes decode_package(void)
             {
                 temp = 0x80; //temp = 1;
             }
-            //remote_code[i] <<= 1;
             remote_code[i] >>= 1;
             remote_code[i] |= temp;
             indx++;
         }
     }
 
+#ifdef DEBUG_PRINT
+    // debug message 
     strcpy(tbuff, "A1:0x");
     strcat(tbuff, itoa(remote_code[0], 16));
     strcat(tbuff, ", A2:0x");
@@ -340,7 +381,7 @@ ir_codes decode_package(void)
     strcat(tbuff, itoa(remote_code[2], 10));
     strcat(tbuff, "\n");
     dbg_print(tbuff);
-
+#endif
     if ((remote_code[2] | remote_code[3]) == 0xFF)
     {
         res.adcod[0] = remote_code[0];
@@ -353,6 +394,9 @@ ir_codes decode_package(void)
     return res;
 }
 
+/*  itoa() isn't ANSI C v.99 standard and doesn't work on my Linux gcc by default.
+    Using sprintf is too much for 16 kB flash memory of STM32F030F4P6.
+*/
 char * itoa(int val, int base) {
     static char buf[32] = {0};
     
@@ -375,9 +419,6 @@ char * itoa(int val, int base) {
 
 // ------------------------------------------------------------------------------
 static void clock_setup(void) {
-    // First, let's ensure that our clock is running off the high-speed internal
-    // oscillator (HSI) at 48MHz.
-    //rcc_clock_setup_in_hsi_out_48mhz();
     rcc_clock_setup_in_hse_8mhz_out_48mhz();
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOB);
@@ -390,29 +431,24 @@ static void systick_setup(void) {
     systick_set_clocksource(STK_CSR_CLKSOURCE_AHB);
     // Clear the Current Value Register so that we start at 0
     STK_CVR = 0;
-    // In order to trigger an interrupt every millisecond, we can set the reload
-    // value to be the speed of the processor / 1000 -1
     systick_set_reload(rcc_ahb_frequency / 1000 - 1);
-    // Enable interrupts from the system tick clock
     systick_interrupt_enable();
-    // Enable the system tick counter
     systick_counter_enable();
 }
 
 static void gpio_setup(void) {
-    //  Board Led
+    //  Board LED
     gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO4);
-    // Resistor enable
+    // Potentiometer enable
     gpio_mode_setup(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO1);
-    // Resistor Inc -> tim1_setup (TIM1, CH1)
-    // Resistor Up/Dn
+    // Potentiometer Up/Dn
     gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO6);
-    // Button Lern
+    // Learn button input
     gpio_mode_setup(GPIOA, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO5);
 
     // VS1838 input
     nvic_enable_irq(NVIC_EXTI2_3_IRQ);
-    gpio_mode_setup(GPIOA, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO3);   // PULLUP->NONE ?
+    gpio_mode_setup(GPIOA, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO3);
     exti_select_source(EXTI3, GPIOA);
     exti_set_trigger(EXTI3, EXTI_TRIGGER_FALLING);
     exti_enable_request(EXTI3);
@@ -425,11 +461,9 @@ static void usart_setup(void) {
 
     /* Setup GPIO pins for USART1 transmit. */
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO9);
-    /* Setup USART1 TX pin as alternate function. */
     gpio_set_af(GPIOA, GPIO_AF1, GPIO9);
     /* Setup GPIO pins for USART1 receive */
     //gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO10);
-    /* Setup USART1 RX pin as alternate function. */
     //gpio_set_af(GPIOA, GPIO_AF1, GPIO10);
 
         /* Setup UART parameters. */
@@ -440,15 +474,9 @@ static void usart_setup(void) {
     usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
     usart_set_mode(USART1, USART_MODE_TX);
 
-    /* Enable USART1 Receive interrupt. */
-    //USART_CR1(USART1) |= USART_CR1_RXNEIE;
-    //usart_enable_rx_interrupt(USART1);
-    /* Finally enable the USART. */
     usart_enable(USART1);
-
 }
 
-//static void dma_write(char *data, int size)
 static void dma_write(void)
 {
     // Using channel 2 for USART1_TX
@@ -471,43 +499,36 @@ static void dma_write(void)
 }
 
 
-// ------------------------------------------------------------------------------
+// TIM1 - waveform generation
 static void tim1_setup(void) {
     rcc_periph_clock_enable(RCC_TIM1);
 
     nvic_enable_irq(NVIC_TIM1_BRK_UP_TRG_COM_IRQ);
     nvic_set_priority(NVIC_TIM1_BRK_UP_TRG_COM_IRQ, 1);
 
+    // Potentiometer ~Inc -> TIM1, CH1N
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO7);
     gpio_set_af(GPIOA, GPIO_AF2, GPIO7);
 
     rcc_periph_reset_pulse(RST_TIM1);
     timer_set_mode(TIM1, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM1, 48 - 1);
-    timer_set_period(TIM1, 7);  // ARR         - Period
+    timer_set_period(TIM1, 7);  // ARR 
     timer_set_oc_value(TIM1, TIM_OC1, 4);   // - Pulse
     timer_set_repetition_counter(TIM1, 0);
     timer_generate_event(TIM1, TIM_EGR_UG);
     timer_one_shot_mode(TIM1);
-
     timer_set_oc_mode(TIM1, TIM_OC1, TIM_OCM_PWM2);
-
     timer_disable_preload(TIM1);
     
-
-//    timer_enable_oc_preload(TIM1, TIM_OC1);
-    timer_set_oc_polarity_low(TIM1, TIM_OC1N);
+    timer_set_oc_polarity_low(TIM1, TIM_OC1N);  // low level pulses for ~Inc
     timer_set_oc_idle_state_set(TIM1, TIM_OC1N);
 
     timer_enable_oc_output(TIM1, TIM_OC1N);
     timer_enable_break_main_output(TIM1);
-
-    //timer_enable_break_main_output(TIM1);
-
-    //timer_enable_irq(TIM1, TIM_DIER_UIE);
-    //timer_enable_counter(TIM1);
 }
 
+// measuring ir signal period
 static void tim2_setup(void) {
     rcc_periph_clock_enable(RCC_TIM2);
 
@@ -524,8 +545,7 @@ static void tim2_setup(void) {
     timer_generate_event(TIM2, TIM_EGR_UG); // 1-st Update Event
 }
 
-// ------------------ isr ---------------------------
-
+// USART DMA interrupt
 void dma1_channel2_3_dma2_channel1_2_isr(void)
 {
     if ((DMA1_ISR &DMA_ISR_TCIF2) != 0)
@@ -535,21 +555,22 @@ void dma1_channel2_3_dma2_channel1_2_isr(void)
     dma_disable_transfer_complete_interrupt(DMA1, DMA_CHANNEL2);
     usart_disable_tx_dma(USART1);
     dma_disable_channel(DMA1, DMA_CHANNEL2);
+    transmit = 0;
 }
 
+// TIM1 interrupt
 void tim1_brk_up_trg_com_isr(void)
 {
-    if (timer_get_flag(TIM1, TIM_SR_UIF))
+    if (timer_get_flag(TIM1, TIM_SR_UIF))   // Update event interrupt
     {
         timer_clear_flag(TIM1, TIM_SR_UIF);
         flag_pulse = 0;
-        //timer_disable_counter(TIM1);
     }
 }
 
+// TIM2 interrupt
 void tim2_isr(void)
 {
-    //TIM_SR(TIM2) &= ~TIM_SR_UIF; /* Clear interrrupt flag. */
     if (timer_get_flag(TIM2, TIM_SR_UIF))
     {
         timer_clear_flag(TIM2, TIM_SR_UIF);
@@ -557,6 +578,7 @@ void tim2_isr(void)
     }
 }
 
+// VS1838 interrupt
 void exti2_3_isr(void)
 {
     if (exti_get_flag_status(EXTI3))
