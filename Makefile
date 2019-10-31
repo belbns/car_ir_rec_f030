@@ -19,8 +19,6 @@
 
 BINARY = car_ir_rec
 
-#OBJS = flash.o
-
 LDSCRIPTPR = f0/stm32f03xz4.ld
 
 include Makefile.include

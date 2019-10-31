@@ -1,22 +1,27 @@
 /*
-* Autor: Nikolay Belov
-*
-* The steering wheel buttons imitator based on STM32F030F4P6 with using
-* Digitally-Controlled Potentiometer X9103P as a resistive matrix
-* for imitating real steering wheel buttons.
-* The Device must be connected to KEY1 or KEY2 input of car multimedia device
-* (Android based device in my case).
-* The device allow imitate up to 24 buttons with 400 Ohm steps.
-* Any IR remote control with NEC protocol can be used as a steering wheel buttons,
-* I use cheep "Steering Wheel Remote Control For Car multimedia Player" from Aiexpress.
-* The Lerning mode (the Learn button) allow to detect and to remember remote codes 
-* and to save them to the internal flash memory.
-* The Test button is using to manual connect the potentiometer to multimedia device
-* during setting buttons procedure.
-*
-* Thanks for NEC IR protocol detecting idea:
-* https://blog.csdn.net/u011303443/article/details/76945003
-* https://programmer.help/blogs/stm32-timer-for-infrared-remote-control-data-reception.html
+ * Autor: Nikolay Belov
+ *
+ * Tools: Linux Mint, gcc-arm-none-eabi, OpenOCD, LIBOPENCM3, Sublime Text.
+ * 
+ * The steering wheel buttons imitator based on STM32F030F4P6 demo board with using
+ * digitally-controlled potentiometer X9C103P for imitating resistive matrix
+ * of real steering wheel buttons.
+ * The device allow imitate up to 20 buttons with 400 Ohm (4 pulses) steps.
+ * Any IR remote control with NEC protocol can be used as a steering wheel buttons.
+ * I'm using the cheap "Steering Wheel Remote Control For Car multimedia Player"
+ * from Aliexpress.
+ * The Device must be connected to KEY1 or KEY2 input of car multimedia device
+ * (Android based multimedia player in my case).
+ * The Lerning mode (the Learn button) allow to detect and to remember remote codes 
+ * and to save them to the internal flash memory.
+ * The Test button is using to manual connect the potentiometer to multimedia player
+ * during setting buttons procedure.
+ *
+ * NEC IR protocol detecting idea:
+ * https://blog.csdn.net/u011303443/article/details/76945003
+ * https://programmer.help/blogs/stm32-timer-for-infrared-remote-control-data-reception.html
+ *
+ * Waveform generation idea: General-purpose timer cookbook (AN4776, STMicroelectronics).
 */
 
 #include <errno.h>
@@ -52,17 +57,17 @@ static void dma_write(void);
 void led_blink(uint8_t cnt);
 void save_codes_to_flash(void);
 uint8_t get_pulses(ir_codes adcom);
-ir_codes decode_package(void);
-char * itoa(int val, int base);
-void dbg_print(char * st);
 void gen_pulses(uint16_t number);
+ir_codes decode_package(void);
+void dbg_print(char * st);
+char * itoa(int val, int base);
 
 uint64_t millis(void);
 void delay(uint64_t duration);
 
 #define PAGE_15_ADDR            0x08003C00  // upper page of the flash memory
 #define CODES_SIGNATURE         0x55AA
-#define CODES_MAX               25
+#define CODES_MAX               21
 #define PULSES_MAX              99
 
 #define KEY_PULSE               150 // duration of the connected state of Potentiometer, mS
@@ -97,7 +102,6 @@ uint64_t millis(void) {
 }
 
 void sys_tick_handler(void) {
-    // Increment our monotonic clock
     _millis++;
 }
 
@@ -106,7 +110,7 @@ void delay(uint64_t duration) {
     while (millis() < until) ;
 }
 
-// debug messages via USART
+// send debug messages via USART
 void dbg_print(char * st)
 {
     while (transmit != 0)
@@ -175,6 +179,12 @@ int main(void)
     timer_disable_counter(TIM1);
     gpio_clear(GPIOA, GPIO6);
     gen_pulses(100);
+    delay(100);
+    /* There is ability to destroy digital potentiometer when it has a little resistance.
+       I think, we need to set initial value to 1.2 kOhm by 12 pulses up.
+    */
+    gpio_set(GPIOA, GPIO6);
+    gen_pulses(12);
     delay(100);
 
     while (1)
@@ -417,7 +427,7 @@ char * itoa(int val, int base) {
 }
 
 
-// ------------------------------------------------------------------------------
+// -----------------------------------------
 static void clock_setup(void) {
     rcc_clock_setup_in_hse_8mhz_out_48mhz();
     rcc_periph_clock_enable(RCC_GPIOA);
@@ -446,27 +456,23 @@ static void gpio_setup(void) {
     // Learn button input
     gpio_mode_setup(GPIOA, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO5);
 
-    // VS1838 input
+    // IR receiver input
     nvic_enable_irq(NVIC_EXTI2_3_IRQ);
     gpio_mode_setup(GPIOA, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO3);
     exti_select_source(EXTI3, GPIOA);
-    exti_set_trigger(EXTI3, EXTI_TRIGGER_FALLING);
+    exti_set_trigger(EXTI3, EXTI_TRIGGER_FALLING);  // falling edge interrupt
     exti_enable_request(EXTI3);
 }
-
 
 static void usart_setup(void) {
     nvic_set_priority(NVIC_DMA1_CHANNEL2_3_DMA2_CHANNEL1_2_IRQ, 0);
     nvic_enable_irq(NVIC_DMA1_CHANNEL2_3_DMA2_CHANNEL1_2_IRQ);
 
-    /* Setup GPIO pins for USART1 transmit. */
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO9);
     gpio_set_af(GPIOA, GPIO_AF1, GPIO9);
-    /* Setup GPIO pins for USART1 receive */
     //gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO10);
     //gpio_set_af(GPIOA, GPIO_AF1, GPIO10);
 
-        /* Setup UART parameters. */
     usart_set_baudrate(USART1, 115200);
     usart_set_databits(USART1, 8);
     usart_set_stopbits(USART1, USART_STOPBITS_1);
@@ -498,7 +504,6 @@ static void dma_write(void)
     usart_enable_tx_dma(USART1);
 }
 
-
 // TIM1 - waveform generation
 static void tim1_setup(void) {
     rcc_periph_clock_enable(RCC_TIM1);
@@ -513,8 +518,8 @@ static void tim1_setup(void) {
     rcc_periph_reset_pulse(RST_TIM1);
     timer_set_mode(TIM1, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM1, 48 - 1);
-    timer_set_period(TIM1, 7);  // ARR 
-    timer_set_oc_value(TIM1, TIM_OC1, 4);   // - Pulse
+    timer_set_period(TIM1, 7);
+    timer_set_oc_value(TIM1, TIM_OC1, 4);
     timer_set_repetition_counter(TIM1, 0);
     timer_generate_event(TIM1, TIM_EGR_UG);
     timer_one_shot_mode(TIM1);
@@ -578,7 +583,7 @@ void tim2_isr(void)
     }
 }
 
-// VS1838 interrupt
+// IR receiver fallling edge interrupt
 void exti2_3_isr(void)
 {
     if (exti_get_flag_status(EXTI3))
@@ -588,18 +593,18 @@ void exti2_3_isr(void)
         if(startflag)
         {
             uint16_t ir_time = ucTim2Flag;
-            if(ir_time < 150 && ir_time >= 50 ) // < 15mS and > 5mS - Received SyncHeader
+            if((ir_time < 150) && (ir_time >= 50)) // < 15mS and > 5mS - Received SyncHeader
             {
-                idx=0;              // Array subscript zeroing
+                idx = 0;            // Array subscript zeroing
             }
 
             irdata[idx] = ir_time;  // Get Count Time
             ucTim2Flag = 0;         // Zero count time for next count
             idx++;                  // Received a data, index plus 1
             
-            if(idx==33)             // received 33 bits - 32 bits and a sync header
+            if (idx == 33)          // received 33 bits - 32 bits and a sync header
             {
-                idx=0;
+                idx = 0;
                 ucTim2Flag = 0;
                 receiveComplete = 1;
             }
