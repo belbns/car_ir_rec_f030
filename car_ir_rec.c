@@ -68,7 +68,7 @@ void delay(uint64_t duration);
 #define PAGE_15_ADDR            0x08003C00  // upper page of the flash memory
 #define CODES_SIGNATURE         0x55AA
 #define CODES_MAX               21
-#define PULSES_MAX              99
+#define PULSES_MAX              87  // 99 - initial shift (12)
 
 #define KEY_PULSE               150 // duration of the connected state of Potentiometer, mS
 
