@@ -6,7 +6,7 @@
  * The steering wheel buttons imitator based on STM32F030F4P6 demo board with using
  * digitally-controlled potentiometer X9C103P for imitating resistive matrix
  * of real steering wheel buttons.
- * The device allow imitate up to 20 buttons with 400 Ohm (4 pulses) steps.
+ * The device allow imitate up to 21 buttons with 400 Ohm (4 pulses) steps.
  * Any IR remote control with NEC protocol can be used as a steering wheel buttons.
  * I'm using the cheap "Steering Wheel Remote Control For Car multimedia Player"
  * from Aliexpress.
@@ -67,7 +67,7 @@ void delay(uint64_t duration);
 
 #define PAGE_15_ADDR            0x08003C00  // upper page of the flash memory
 #define CODES_SIGNATURE         0x55AA
-#define CODES_MAX               21
+#define CODES_MAX               22  // CODES_SIGNATURE + 21 codes 
 #define PULSES_MAX              87  // 99 - initial shift (12)
 
 #define KEY_PULSE               150 // duration of the connected state of Potentiometer, mS
