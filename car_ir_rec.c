@@ -113,6 +113,7 @@ void delay(uint64_t duration) {
 // send debug messages via USART
 void dbg_print(char * st)
 {
+    delay(10);
     while (transmit != 0)
     {
         delay(4);
