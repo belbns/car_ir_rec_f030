@@ -6,12 +6,12 @@
  * The steering wheel buttons imitator based on STM32F030F4P6 demo board with using
  * digitally-controlled potentiometer X9C103P for imitating resistive matrix
  * of real steering wheel buttons.
- * The device allow imitate up to 21 buttons with 400 Ohm (4 pulses) steps.
+ * The device allow imitate up to 16 buttons with 400 Ohm (4 pulses) steps.
  * Any IR remote control with NEC protocol can be used as a steering wheel buttons.
  * I'm using the cheap "Steering Wheel Remote Control For Car multimedia Player"
- * from Aliexpress.
- * The Device must be connected to KEY1 or KEY2 input of car multimedia device
- * (Android based multimedia player in my case).
+ * from Aliexpress (rem_ctrl.jpg).
+ * The Device must be connected to KEY1 or KEY2 input of car multimedia device,
+ * Android based multimedia player in my case.
  * The Lerning mode (the Learn button) allow to detect and to remember remote codes 
  * and to save them to the internal flash memory.
  * The Test button is using to manual connect the potentiometer to multimedia player
@@ -67,8 +67,8 @@ void delay(uint64_t duration);
 
 #define PAGE_15_ADDR            0x08003C00  // upper page of the flash memory
 #define CODES_SIGNATURE         0x55AA
-#define CODES_MAX               22  // CODES_SIGNATURE + 21 codes 
-#define PULSES_MAX              87  // 99 - initial shift (12)
+#define CODES_MAX               17  // CODES_SIGNATURE + 16 codes 
+#define PULSES_MAX              99
 
 #define KEY_PULSE               150 // duration of the connected state of Potentiometer, mS
 
@@ -181,12 +181,6 @@ int main(void)
     gpio_clear(GPIOA, GPIO6);
     gen_pulses(100);
     delay(100);
-    /* There is ability to destroy digital potentiometer when it has a little resistance.
-       I think, we need to set initial value to 1.2 kOhm by 12 pulses up.
-    */
-    gpio_set(GPIOA, GPIO6);
-    gen_pulses(12);
-    delay(100);
 
     while (1)
     {
@@ -264,10 +258,10 @@ int main(void)
                         {
                             delay(4);
                         }
-                        gpio_set(GPIOB, GPIO1);     // connect the Potentiometer
-                        delay(KEY_PULSE);
-                        gpio_clear(GPIOB, GPIO1);   // disconnect the Potentiometer
                     }
+                    gpio_set(GPIOB, GPIO1);     // connect the Potentiometer
+                    delay(KEY_PULSE);
+                    gpio_clear(GPIOB, GPIO1);   // disconnect the Potentiometer
                     gpio_set(GPIOA, GPIO4); // board LED OFF
                 }
             }
@@ -328,7 +322,7 @@ void save_codes_to_flash(void)
 }
 
 /* return the number of pulses for switching from 0 Ohm
- to the destination resistanse with 400 OHm steps */
+ to the destination resistanse with 500 OHm steps */
 uint8_t get_pulses(ir_codes adcom)
 {       
     uint8_t res = 0;
@@ -428,7 +422,7 @@ char * itoa(int val, int base) {
 }
 
 
-// -----------------------------------------
+// ----------------------------------------------------------------------
 static void clock_setup(void) {
     rcc_clock_setup_in_hse_8mhz_out_48mhz();
     rcc_periph_clock_enable(RCC_GPIOA);
