@@ -1,5 +1,5 @@
 /*
- * Autor: Nikolay Belov
+ * Author: Nikolay Belov
  *
  * Tools: Linux Mint, gcc-arm-none-eabi, OpenOCD, LIBOPENCM3, Sublime Text.
  * 
@@ -16,6 +16,16 @@
  * and to save them to the internal flash memory.
  * The Test button is using to manual connect the potentiometer to multimedia player
  * during setting buttons procedure.
+ *
+ *
+ * Имитатор резистивной матрицы кнопок руля на базе демо-платы STM32F030F4P6 и цифрового
+ * потенциометра X9C103P.
+ * Устройство позволяет имитировать нажатие до 16 кнопок руля с шагом 400 Ом (4 импульса).
+ * Я использую блок кнопок руля с инфракрасным излучателем с Алиэкспресс (11 кнопок).
+ * Устройство подключается ко входу KEY1 или ко входу KEY2 радио/плеера на базе Андроид.
+ * Режим обучения (кнопка Learn) позволяет распознать и запомнить во внутреннюю память
+ * коды IR излучателя.
+ * Кнопка Test используется при обучении радио/плеера. 
  *
  * NEC IR protocol detecting idea:
  * https://blog.csdn.net/u011303443/article/details/76945003
