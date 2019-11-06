@@ -7,8 +7,7 @@ of real steering wheel buttons.
 The device allow imitate up to 16 buttons with 400 Ohm (4 pulses) steps.
 <br>
 Any IR remote control with NEC protocol can be used as a steering wheel buttons.
-I'm using the cheap "Steering Wheel Remote Control For Car multimedia Player"
-from Aliexpress (rem_ctrl.jpg).
+I'm using the "Steering Wheel Remote Control" (11 buttons) from Aliexpress (rem_ctrl.png).
 <br>
 The Device must be connected to KEY1 or KEY2 input of car multimedia device,
 Android based multimedia player in my case.
@@ -25,7 +24,7 @@ during setting buttons procedure.
 на базе демо-платы STM32F030F4P6 и цифрового потенциометра X9C103P.
 <br>
 Устройство позволяет имитировать нажатие до 16 кнопок руля с шагом 400 Ом (4 импульса).
-Я использую блок кнопок руля с инфракрасным излучателем с Алиэкспресс (11 кнопок).
+Я использую блок кнопок руля с инфракрасным излучателем (11 кнопок) с Алиэкспресс (rem_ctrl.png).
 <br>
 Устройство подключается ко входу KEY1 или ко входу KEY2 радио/плеера на базе Андроид.
 <br>

@@ -9,7 +9,7 @@
  * The device allow imitate up to 16 buttons with 400 Ohm (4 pulses) steps.
  * Any IR remote control with NEC protocol can be used as a steering wheel buttons.
  * I'm using the cheap "Steering Wheel Remote Control For Car multimedia Player"
- * from Aliexpress (rem_ctrl.jpg).
+ * from Aliexpress (rem_ctrl.png).
  * The Device must be connected to KEY1 or KEY2 input of car multimedia device,
  * Android based multimedia player in my case.
  * The Lerning mode (the Learn button) allow to detect and to remember remote codes 
